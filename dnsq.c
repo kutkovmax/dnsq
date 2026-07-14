@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "dns.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -6,10 +7,6 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
-
-static unsigned read16(const unsigned char *p) {
-    return (unsigned)p[0] << 8 | p[1];
-}
 
 static int make_query(const char *name, unsigned char *buf, size_t *length) {
     size_t n = strlen(name), pos = 12, start = 0;
@@ -32,21 +29,6 @@ static int make_query(const char *name, unsigned char *buf, size_t *length) {
     buf[pos++] = 0; buf[pos++] = 1;
     *length = pos;
     return 0;
-}
-
-static int skip_name(const unsigned char *buf, size_t len, size_t *pos) {
-    while (*pos < len) {
-        unsigned c = buf[(*pos)++];
-        if ((c & 0xc0) == 0xc0) {
-            if (*pos >= len) return -1;
-            ++*pos;
-            return 0;
-        }
-        if (c & 0xc0 || c > len - *pos) return -1;
-        if (!c) return 0;
-        *pos += c;
-    }
-    return -1;
 }
 
 int main(int argc, char **argv) {
@@ -87,25 +69,11 @@ int main(int argc, char **argv) {
     ssize_t count = recv(fd, answer, sizeof answer, 0);
     close(fd);
     if (count < 0) { perror("dnsq: receive"); return 1; }
-    size_t len = (size_t)count, pos = 12;
-    if (len < 12 || read16(answer) != 0x1234 || !(answer[2] & 0x80)
-        || read16(answer + 4) != 1 || (answer[3] & 15)) {
+    dns_reply reply;
+    if (dns_parse(answer, (size_t)count, 0x1234, 1, &reply)) {
         fprintf(stderr, "dnsq: bad DNS reply\n"); return 1;
     }
-    if (skip_name(answer, len, &pos) || len - pos < 4) return 1;
-    pos += 4;
-    for (unsigned i = 0; i < read16(answer + 6); ++i) {
-        if (skip_name(answer, len, &pos) || len - pos < 10) return 1;
-        unsigned type = read16(answer + pos), klass = read16(answer + pos + 2);
-        unsigned rdlen = read16(answer + pos + 8);
-        pos += 10;
-        if (rdlen > len - pos) return 1;
-        if (type == 1 && klass == 1 && rdlen == 4) {
-            char ip[INET_ADDRSTRLEN];
-            if (!inet_ntop(AF_INET, answer + pos, ip, sizeof ip)) return 1;
-            puts(ip);
-        }
-        pos += rdlen;
-    }
+    if (reply.rcode) { fprintf(stderr, "dnsq: DNS error %u\n", reply.rcode); return 1; }
+    for (size_t i = 0; i < reply.count; ++i) puts(reply.records[i].data);
     return 0;
 }
