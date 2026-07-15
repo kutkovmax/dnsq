@@ -30,5 +30,30 @@ int main(void) {
     memcpy(bad, good, sizeof bad);
     bad[2] |= 2; /* UDP response is truncated. */
     assert(dns_parse(bad, sizeof bad, 0x1234, 1, &reply) != 0);
+    static const struct {
+        unsigned type;
+        unsigned char rdata[20];
+        size_t size;
+        const char *result;
+    } cases[] = {
+        {28, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, 16, "::1"},
+        {2, {0xc0, 0x0c}, 2, "a"},
+        {5, {0xc0, 0x0c}, 2, "a"},
+        {15, {0, 10, 0xc0, 0x0c}, 4, "10 a"},
+        {15, {0, 0, 0}, 3, "0 ."},
+        {16, {3, 'f', 'o', 'o'}, 4, "foo"}
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof *cases; ++i) {
+        unsigned char packet[sizeof good + 20];
+        memcpy(packet, good, sizeof good);
+        packet[16] = (unsigned char)cases[i].type;
+        packet[22] = (unsigned char)cases[i].type;
+        packet[30] = (unsigned char)cases[i].size;
+        memcpy(packet + 31, cases[i].rdata, cases[i].size);
+        assert(dns_parse(packet, 31 + cases[i].size, 0x1234,
+                         (unsigned short)cases[i].type, &reply) == 0);
+        assert(reply.count == 1);
+        assert(strcmp(reply.records[0].data, cases[i].result) == 0);
+    }
     return 0;
 }

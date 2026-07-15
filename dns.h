@@ -19,6 +19,8 @@ typedef struct {
     unsigned rcode;
 } dns_reply;
 
+int dns_type(const char *text, uint16_t *type);
+const char *dns_type_name(uint16_t type);
 int dns_parse(const uint8_t *buf, size_t len, uint16_t id,
               uint16_t question_type, dns_reply *reply);
 
