@@ -30,6 +30,10 @@ int main(void) {
     memcpy(bad, good, sizeof bad);
     bad[2] |= 2; /* UDP response is truncated. */
     assert(dns_parse(bad, sizeof bad, 0x1234, 1, &reply) != 0);
+    memcpy(bad, good, sizeof bad);
+    bad[3] = 0x83; /* NXDOMAIN is a valid reply with a nonzero RCODE. */
+    assert(dns_parse(bad, sizeof bad, 0x1234, 1, &reply) == 0);
+    assert(reply.rcode == 3);
     static const struct {
         unsigned type;
         unsigned char rdata[20];
@@ -55,5 +59,9 @@ int main(void) {
         assert(reply.count == 1);
         assert(strcmp(reply.records[0].data, cases[i].result) == 0);
     }
+    memcpy(bad, good, sizeof bad);
+    bad[16] = 16; bad[22] = 16;
+    bad[31] = 5; /* TXT chunk extends beyond its RDATA. */
+    assert(dns_parse(bad, sizeof bad, 0x1234, 16, &reply) != 0);
     return 0;
 }
